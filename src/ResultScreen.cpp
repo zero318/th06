@@ -1,14 +1,10 @@
 #include "ResultScreen.hpp"
-#include "AnmManager.hpp"
-#include "AsciiManager.hpp"
 #include "BulletManager.hpp"
 #include "Chain.hpp"
 #include "ChainPriorities.hpp"
-#include "GameManager.hpp"
 #include "GameWindow.hpp"
 #include "Global.hpp"
 #include "MainMenu.hpp"
-#include "Player.hpp"
 #include "ReplayManager.hpp"
 #include "SoundPlayer.hpp"
 #include "Stage.hpp"
@@ -132,6 +128,43 @@ const char *g_CharacterList[] = {
 
 #define DEFAULT_HIGH_SCORE_NAME "Nanashi "
 
+#pragma var_order(scoresAmount, nextNode)
+static i32 LinkScore(ScoreListNode *prevNode, Hscr *newScore)
+{
+    i32 scoresAmount;
+    ScoreListNode *nextNode;
+
+    scoresAmount = 0;
+    while (prevNode->next != NULL)
+    {
+        if (prevNode->next->data != NULL && prevNode->next->data->score <= newScore->score)
+        {
+            break;
+        }
+        prevNode = prevNode->next;
+        scoresAmount++;
+    }
+    nextNode = prevNode->next;
+
+    prevNode->next = ZUN_ALLOC_TYPE(ScoreListNode);
+    prevNode->next->prev = prevNode;
+    prevNode = prevNode->next;
+    prevNode->data = newScore;
+    prevNode->next = nextNode;
+    return scoresAmount;
+}
+
+static void FreeAllScores(ScoreListNode *scores)
+{
+    scores = scores->next;
+    while (scores != NULL)
+    {
+        ScoreListNode *next = scores->next;
+        ZUN_FREE(scores);
+        scores = next;
+    }
+}
+
 #pragma var_order(scoreData, bytesShifted, xorValue, checksum, bytes, remainingData, decryptedFilePointer, fileLen)
 ScoreDat *OpenScore(const char *path)
 {
@@ -208,43 +241,6 @@ ScoreDat *OpenScore(const char *path)
     scoreData->scores->data = NULL;
     scoreData->scores->prev = NULL;
     return scoreData;
-}
-
-#pragma var_order(scoresAmount, nextNode)
-static i32 LinkScore(ScoreListNode *prevNode, Hscr *newScore)
-{
-    i32 scoresAmount;
-    ScoreListNode *nextNode;
-
-    scoresAmount = 0;
-    while (prevNode->next != NULL)
-    {
-        if (prevNode->next->data != NULL && prevNode->next->data->score <= newScore->score)
-        {
-            break;
-        }
-        prevNode = prevNode->next;
-        scoresAmount++;
-    }
-    nextNode = prevNode->next;
-
-    prevNode->next = ZUN_ALLOC_TYPE(ScoreListNode);
-    prevNode->next->prev = prevNode;
-    prevNode = prevNode->next;
-    prevNode->data = newScore;
-    prevNode->next = nextNode;
-    return scoresAmount;
-}
-
-static void FreeAllScores(ScoreListNode *scores)
-{
-    scores = scores->next;
-    while (scores != NULL)
-    {
-        ScoreListNode *next = scores->next;
-        ZUN_FREE(scores);
-        scores = next;
-    }
 }
 
 #pragma var_order(highScore, remainingSize, scoreData, dataScore, score)
@@ -448,6 +444,15 @@ void ReleaseScoreDat(ScoreDat *scoreDat)
     ZUN_FREE(scoreDat);
 }
 
+} // namespace th06
+
+#include "AnmManager.hpp"
+#include "AsciiManager.hpp"
+#include "GameManager.hpp"
+#include "Player.hpp"
+
+namespace th06
+{
 #pragma var_order(difficulty, highScoreSlot, fileBuffer, sizeOfFile, scoreNode, shottype, clrd, catk, pscr, stage,     \
                   shotType, originalByte, remainingSize, xorValue, bytes, sd)
 void WriteScore(ResultScreen *resultScreen)
@@ -596,6 +601,351 @@ i32 ResultScreen::LinkScoreEx(Hscr *out, i32 difficulty, i32 shottype)
 void ResultScreen::FreeScore(i32 difficulty, i32 shottype)
 {
     FreeAllScores(&this->scores[difficulty][shottype]);
+}
+
+#pragma var_order(i, vm)
+static ChainCallbackResult ResultScreen_OnUpdate(ResultScreen *resultScreen)
+{
+    AnmVm *vm;
+    i32 i;
+    switch (resultScreen->resultScreenState)
+    {
+    case RESULT_SCREEN_STATE_EXIT:
+        g_Supervisor.curState = SUPERVISOR_STATE_MAINMENU;
+        return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
+
+    case RESULT_SCREEN_STATE_INIT:
+
+        if (resultScreen->frameTimer == 0)
+        {
+            vm = &resultScreen->unk_40[0];
+            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+            {
+                vm->pendingInterrupt = 1;
+                vm->flags.colorOp = AnmColorOp_Add;
+                if (!g_Supervisor.IsHardwareBlendingDisabled())
+                {
+                    vm->color &= COLOR_BLACK;
+                }
+                else
+                {
+                    vm->color &= COLOR_WHITE;
+                }
+            }
+
+            vm = &resultScreen->unk_40[1];
+            for (i = 0; i <= 6; i++, vm++)
+            {
+                if (i == resultScreen->cursor)
+                {
+                    if (!g_Supervisor.IsHardwareBlendingDisabled())
+                    {
+                        vm->color = COLOR_DARK_GREY;
+                    }
+                    else
+                    {
+                        vm->color = COLOR_WHITE;
+                    }
+
+                    vm->posOffset = D3DXVECTOR3(-4.0f, -4.0f, 0.0f);
+                }
+                else
+                {
+                    if (!g_Supervisor.IsHardwareBlendingDisabled())
+                    {
+                        vm->color = COLOR_SET_ALPHA(COLOR_BLACK, 176);
+                    }
+                    else
+                    {
+                        vm->color = COLOR_SET_ALPHA(COLOR_WHITE, 176);
+                    }
+                    vm->posOffset = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
+                }
+            }
+        }
+
+        if (resultScreen->frameTimer < 20)
+        {
+            break;
+        }
+
+        resultScreen->resultScreenState++;
+        resultScreen->frameTimer = 0;
+
+    case RESULT_SCREEN_STATE_CHOOSING_DIFFICULTY:
+
+        MoveResultCursor(resultScreen, 7);
+
+        vm = &resultScreen->unk_40[1];
+        for (i = 0; i <= 6; i++, vm++)
+        {
+            if (i == resultScreen->cursor)
+            {
+                if (!g_Supervisor.IsHardwareBlendingDisabled())
+                {
+                    vm->color = COLOR_DARK_GREY;
+                }
+                else
+                {
+                    vm->color = COLOR_WHITE;
+                }
+                vm->posOffset = D3DXVECTOR3(-4.0f, -4.0f, 0.0f);
+            }
+            else
+            {
+                if (!g_Supervisor.IsHardwareBlendingDisabled())
+                {
+                    vm->color = COLOR_SET_ALPHA(COLOR_BLACK, 176);
+                }
+                else
+                {
+                    vm->color = COLOR_SET_ALPHA(COLOR_WHITE, 176);
+                }
+                vm->posOffset = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
+            }
+        }
+
+        if (WAS_PRESSED(TH_BUTTON_SELECTMENU))
+        {
+            vm = &resultScreen->unk_40[0];
+            switch (resultScreen->cursor)
+            {
+            case RESULT_SCREEN_CURSOR_EASY:
+            case RESULT_SCREEN_CURSOR_NORMAL:
+            case RESULT_SCREEN_CURSOR_HARD:
+            case RESULT_SCREEN_CURSOR_LUNATIC:
+            case RESULT_SCREEN_CURSOR_EXTRA:
+                for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+                {
+                    vm->pendingInterrupt = resultScreen->cursor + 3;
+                }
+                resultScreen->diffSelected = resultScreen->cursor;
+
+                resultScreen->resultScreenState = resultScreen->cursor + RESULT_SCREEN_STATE_BEST_SCORES_EASY;
+                resultScreen->lastResultScreenState = resultScreen->resultScreenState;
+                resultScreen->frameTimer = 0;
+                resultScreen->cursor = resultScreen->lastBestScoresCursor;
+                resultScreen->charUsed = -1;
+                resultScreen->lastSpellcardSelected = -1;
+                break;
+
+            case RESULT_SCREEN_CURSOR_SPELLCARDS:
+                for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+                {
+                    vm->pendingInterrupt = resultScreen->cursor + 3;
+                }
+                resultScreen->diffSelected = resultScreen->cursor;
+                resultScreen->resultScreenState = RESULT_SCREEN_STATE_SPELLCARDS;
+                resultScreen->lastResultScreenState = resultScreen->resultScreenState;
+                resultScreen->frameTimer = 0;
+                resultScreen->charUsed = -1;
+                resultScreen->cursor = resultScreen->previousCursor;
+                resultScreen->lastSpellcardSelected = -1;
+                break;
+
+            case RESULT_SCREEN_CURSOR_EXIT:
+                for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+                {
+                    vm->pendingInterrupt = 2;
+                }
+                resultScreen->resultScreenState = RESULT_SCREEN_STATE_EXITING;
+                g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
+            }
+        }
+        if (WAS_PRESSED(TH_BUTTON_RETURNMENU))
+        {
+            resultScreen->cursor = RESULT_SCREEN_CURSOR_EXIT;
+            g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
+        }
+        break;
+
+    case RESULT_SCREEN_STATE_EXITING:
+
+        if (resultScreen->frameTimer < 60)
+        {
+            break;
+        }
+        else
+        {
+            g_Supervisor.curState = SUPERVISOR_STATE_MAINMENU;
+            return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
+        }
+
+    case RESULT_SCREEN_STATE_BEST_SCORES_EXTRA:
+
+#if !TRIALBUILD
+        if (IS_PRESSED(TH_BUTTON_FOCUS) || IS_PRESSED(TH_BUTTON_SKIP))
+        {
+            if (resultScreen->cheatCodeStep < 5)
+            {
+                if (WAS_PRESSED(TH_BUTTON_HOME))
+                {
+                    resultScreen->cheatCodeStep++;
+                }
+                else if (WAS_PRESSED(TH_BUTTON_WRONG_CHEATCODE))
+                {
+                    resultScreen->cheatCodeStep = 0;
+                }
+            }
+            else if (resultScreen->cheatCodeStep < 7)
+            {
+                if (WAS_PRESSED(TH_BUTTON_Q))
+                {
+                    resultScreen->cheatCodeStep++;
+                }
+                else if (WAS_PRESSED(TH_BUTTON_WRONG_CHEATCODE))
+                {
+                    resultScreen->cheatCodeStep = 0;
+                }
+            }
+            else if (resultScreen->cheatCodeStep < 10)
+            {
+                if (WAS_PRESSED(TH_BUTTON_S))
+                {
+                    resultScreen->cheatCodeStep++;
+                }
+                else if (WAS_PRESSED(TH_BUTTON_WRONG_CHEATCODE))
+                {
+                    resultScreen->cheatCodeStep = 0;
+                }
+            }
+            else
+            {
+                for (i32 characterShotType = 0; characterShotType < SHOTTYPE_COUNT; characterShotType++)
+                {
+                    for (i32 difficulty = 0; difficulty < HSCR_NUM_DIFFICULTIES; difficulty++)
+                    {
+                        g_GameManager.clrd[characterShotType].difficultyClearedWithRetries[difficulty] = 99;
+                        g_GameManager.clrd[characterShotType].difficultyClearedWithoutRetries[difficulty] = 99;
+                    }
+                }
+                resultScreen->cheatCodeStep = 0;
+                g_SoundPlayer.PlaySoundByIdx(SOUND_1UP);
+            }
+        }
+        else
+        {
+            resultScreen->cheatCodeStep = 0;
+        }
+#endif
+    case RESULT_SCREEN_STATE_BEST_SCORES_EASY:
+    case RESULT_SCREEN_STATE_BEST_SCORES_NORMAL:
+    case RESULT_SCREEN_STATE_BEST_SCORES_HARD:
+    case RESULT_SCREEN_STATE_BEST_SCORES_LUNATIC:
+
+        if (resultScreen->charUsed != resultScreen->cursor && resultScreen->frameTimer == 20)
+        {
+            resultScreen->charUsed = resultScreen->cursor;
+            g_AnmManager->DrawStringFormat2(&resultScreen->unk_28a0[0], COLOR_RGB(COLOR_WHITE), COLOR_RGB(COLOR_BLACK),
+                                            g_CharacterList[resultScreen->charUsed * SHOTTYPES_PER_CHARACTER]);
+            g_AnmManager->DrawStringFormat2(&resultScreen->unk_28a0[1], COLOR_RGB(COLOR_WHITE), COLOR_RGB(COLOR_BLACK),
+                                            g_CharacterList[resultScreen->charUsed * SHOTTYPES_PER_CHARACTER + 1]);
+        }
+        if (resultScreen->frameTimer < 30)
+        {
+            break;
+        }
+        if (MoveResultCursorHorizontally(resultScreen, 2))
+        {
+            resultScreen->frameTimer = 0;
+            vm = &resultScreen->unk_40[0];
+            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+            {
+                vm->pendingInterrupt = resultScreen->diffSelected + 3;
+            }
+        }
+        if (WAS_PRESSED(TH_BUTTON_RETURNMENU))
+        {
+            g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
+            resultScreen->resultScreenState = RESULT_SCREEN_STATE_INIT;
+            resultScreen->frameTimer = 1;
+            vm = &resultScreen->unk_40[0];
+            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+            {
+                vm->pendingInterrupt = 1;
+            }
+            resultScreen->lastBestScoresCursor = resultScreen->cursor;
+            resultScreen->cursor = resultScreen->diffSelected;
+        }
+
+        break;
+
+    case RESULT_SCREEN_STATE_SPELLCARDS:
+
+        if (resultScreen->lastSpellcardSelected != resultScreen->cursor && resultScreen->frameTimer == 20)
+        {
+            resultScreen->lastSpellcardSelected = resultScreen->cursor;
+            for (i = resultScreen->lastSpellcardSelected * 10; i < resultScreen->lastSpellcardSelected * 10 + 10; i++)
+            {
+                if (i >= CATK_NUM_CAPTURES)
+                {
+                    break;
+                }
+                if (g_GameManager.catk[i].numAttempts == 0)
+                {
+                    g_AnmManager->DrawVmTextFmt(&resultScreen->unk_28a0[i % 10], COLOR_RGB(COLOR_WHITE),
+                                                COLOR_RGB(COLOR_BLACK), TH_UNKNOWN_SPELLCARD);
+                }
+                else
+                {
+                    g_AnmManager->DrawVmTextFmt(&resultScreen->unk_28a0[i % 10], COLOR_RGB(COLOR_WHITE),
+                                                COLOR_RGB(COLOR_BLACK), g_GameManager.catk[i].name);
+                }
+            }
+        }
+        if (resultScreen->frameTimer < 30)
+        {
+            break;
+        }
+        if (MoveResultCursorHorizontally(resultScreen, 7))
+        {
+            resultScreen->frameTimer = 0;
+            vm = &resultScreen->unk_40[0];
+            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+            {
+                vm->pendingInterrupt = resultScreen->diffSelected + 3;
+            }
+        }
+        if (WAS_PRESSED(TH_BUTTON_RETURNMENU))
+        {
+            g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
+            resultScreen->resultScreenState = RESULT_SCREEN_STATE_INIT;
+            resultScreen->frameTimer = 1;
+            vm = &resultScreen->unk_40[0];
+            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+            {
+                vm->pendingInterrupt = 1;
+            }
+            resultScreen->previousCursor = resultScreen->cursor;
+            resultScreen->cursor = resultScreen->diffSelected;
+        }
+        break;
+
+    case RESULT_SCREEN_STATE_WRITING_HIGHSCORE_NAME:
+        resultScreen->HandleResultKeyboard();
+        break;
+
+    case RESULT_SCREEN_STATE_SAVE_REPLAY_QUESTION:
+    case RESULT_SCREEN_STATE_CANT_SAVE_REPLAY:
+    case RESULT_SCREEN_STATE_CHOOSING_REPLAY_FILE:
+    case RESULT_SCREEN_STATE_WRITING_REPLAY_NAME:
+    case RESULT_SCREEN_STATE_OVERWRITE_REPLAY_FILE:
+        resultScreen->HandleReplaySaveKeyboard();
+        break;
+
+    case RESULT_SCREEN_STATE_STATS_SCREEN:
+    case RESULT_SCREEN_STATE_STATS_TO_SAVE_TRANSITION:
+        resultScreen->CheckConfirmButton();
+        break;
+    }
+
+    vm = &resultScreen->unk_40[0];
+    for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
+    {
+        g_AnmManager->ExecuteScript(vm);
+    }
+    resultScreen->frameTimer++;
+    return CHAIN_CALLBACK_RESULT_CONTINUE;
 }
 
 #pragma var_order(idx, sprite)
@@ -1357,351 +1707,6 @@ u32 ResultScreen::DrawFinalStats()
         g_AsciiManager.SetColor(COLOR_WHITE);
     }
     return 0;
-}
-
-#pragma var_order(i, vm)
-static ChainCallbackResult ResultScreen_OnUpdate(ResultScreen *resultScreen)
-{
-    AnmVm *vm;
-    i32 i;
-    switch (resultScreen->resultScreenState)
-    {
-    case RESULT_SCREEN_STATE_EXIT:
-        g_Supervisor.curState = SUPERVISOR_STATE_MAINMENU;
-        return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
-
-    case RESULT_SCREEN_STATE_INIT:
-
-        if (resultScreen->frameTimer == 0)
-        {
-            vm = &resultScreen->unk_40[0];
-            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-            {
-                vm->pendingInterrupt = 1;
-                vm->flags.colorOp = AnmColorOp_Add;
-                if (!g_Supervisor.IsHardwareBlendingDisabled())
-                {
-                    vm->color &= COLOR_BLACK;
-                }
-                else
-                {
-                    vm->color &= COLOR_WHITE;
-                }
-            }
-
-            vm = &resultScreen->unk_40[1];
-            for (i = 0; i <= 6; i++, vm++)
-            {
-                if (i == resultScreen->cursor)
-                {
-                    if (!g_Supervisor.IsHardwareBlendingDisabled())
-                    {
-                        vm->color = COLOR_DARK_GREY;
-                    }
-                    else
-                    {
-                        vm->color = COLOR_WHITE;
-                    }
-
-                    vm->posOffset = D3DXVECTOR3(-4.0f, -4.0f, 0.0f);
-                }
-                else
-                {
-                    if (!g_Supervisor.IsHardwareBlendingDisabled())
-                    {
-                        vm->color = COLOR_SET_ALPHA(COLOR_BLACK, 176);
-                    }
-                    else
-                    {
-                        vm->color = COLOR_SET_ALPHA(COLOR_WHITE, 176);
-                    }
-                    vm->posOffset = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-                }
-            }
-        }
-
-        if (resultScreen->frameTimer < 20)
-        {
-            break;
-        }
-
-        resultScreen->resultScreenState++;
-        resultScreen->frameTimer = 0;
-
-    case RESULT_SCREEN_STATE_CHOOSING_DIFFICULTY:
-
-        MoveResultCursor(resultScreen, 7);
-
-        vm = &resultScreen->unk_40[1];
-        for (i = 0; i <= 6; i++, vm++)
-        {
-            if (i == resultScreen->cursor)
-            {
-                if (!g_Supervisor.IsHardwareBlendingDisabled())
-                {
-                    vm->color = COLOR_DARK_GREY;
-                }
-                else
-                {
-                    vm->color = COLOR_WHITE;
-                }
-                vm->posOffset = D3DXVECTOR3(-4.0f, -4.0f, 0.0f);
-            }
-            else
-            {
-                if (!g_Supervisor.IsHardwareBlendingDisabled())
-                {
-                    vm->color = COLOR_SET_ALPHA(COLOR_BLACK, 176);
-                }
-                else
-                {
-                    vm->color = COLOR_SET_ALPHA(COLOR_WHITE, 176);
-                }
-                vm->posOffset = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-            }
-        }
-
-        if (WAS_PRESSED(TH_BUTTON_SELECTMENU))
-        {
-            vm = &resultScreen->unk_40[0];
-            switch (resultScreen->cursor)
-            {
-            case RESULT_SCREEN_CURSOR_EASY:
-            case RESULT_SCREEN_CURSOR_NORMAL:
-            case RESULT_SCREEN_CURSOR_HARD:
-            case RESULT_SCREEN_CURSOR_LUNATIC:
-            case RESULT_SCREEN_CURSOR_EXTRA:
-                for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-                {
-                    vm->pendingInterrupt = resultScreen->cursor + 3;
-                }
-                resultScreen->diffSelected = resultScreen->cursor;
-
-                resultScreen->resultScreenState = resultScreen->cursor + RESULT_SCREEN_STATE_BEST_SCORES_EASY;
-                resultScreen->lastResultScreenState = resultScreen->resultScreenState;
-                resultScreen->frameTimer = 0;
-                resultScreen->cursor = resultScreen->lastBestScoresCursor;
-                resultScreen->charUsed = -1;
-                resultScreen->lastSpellcardSelected = -1;
-                break;
-
-            case RESULT_SCREEN_CURSOR_SPELLCARDS:
-                for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-                {
-                    vm->pendingInterrupt = resultScreen->cursor + 3;
-                }
-                resultScreen->diffSelected = resultScreen->cursor;
-                resultScreen->resultScreenState = RESULT_SCREEN_STATE_SPELLCARDS;
-                resultScreen->lastResultScreenState = resultScreen->resultScreenState;
-                resultScreen->frameTimer = 0;
-                resultScreen->charUsed = -1;
-                resultScreen->cursor = resultScreen->previousCursor;
-                resultScreen->lastSpellcardSelected = -1;
-                break;
-
-            case RESULT_SCREEN_CURSOR_EXIT:
-                for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-                {
-                    vm->pendingInterrupt = 2;
-                }
-                resultScreen->resultScreenState = RESULT_SCREEN_STATE_EXITING;
-                g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
-            }
-        }
-        if (WAS_PRESSED(TH_BUTTON_RETURNMENU))
-        {
-            resultScreen->cursor = RESULT_SCREEN_CURSOR_EXIT;
-            g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
-        }
-        break;
-
-    case RESULT_SCREEN_STATE_EXITING:
-
-        if (resultScreen->frameTimer < 60)
-        {
-            break;
-        }
-        else
-        {
-            g_Supervisor.curState = SUPERVISOR_STATE_MAINMENU;
-            return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
-        }
-
-    case RESULT_SCREEN_STATE_BEST_SCORES_EXTRA:
-
-#if !TRIALBUILD
-        if (IS_PRESSED(TH_BUTTON_FOCUS) || IS_PRESSED(TH_BUTTON_SKIP))
-        {
-            if (resultScreen->cheatCodeStep < 5)
-            {
-                if (WAS_PRESSED(TH_BUTTON_HOME))
-                {
-                    resultScreen->cheatCodeStep++;
-                }
-                else if (WAS_PRESSED(TH_BUTTON_WRONG_CHEATCODE))
-                {
-                    resultScreen->cheatCodeStep = 0;
-                }
-            }
-            else if (resultScreen->cheatCodeStep < 7)
-            {
-                if (WAS_PRESSED(TH_BUTTON_Q))
-                {
-                    resultScreen->cheatCodeStep++;
-                }
-                else if (WAS_PRESSED(TH_BUTTON_WRONG_CHEATCODE))
-                {
-                    resultScreen->cheatCodeStep = 0;
-                }
-            }
-            else if (resultScreen->cheatCodeStep < 10)
-            {
-                if (WAS_PRESSED(TH_BUTTON_S))
-                {
-                    resultScreen->cheatCodeStep++;
-                }
-                else if (WAS_PRESSED(TH_BUTTON_WRONG_CHEATCODE))
-                {
-                    resultScreen->cheatCodeStep = 0;
-                }
-            }
-            else
-            {
-                for (i32 characterShotType = 0; characterShotType < SHOTTYPE_COUNT; characterShotType++)
-                {
-                    for (i32 difficulty = 0; difficulty < HSCR_NUM_DIFFICULTIES; difficulty++)
-                    {
-                        g_GameManager.clrd[characterShotType].difficultyClearedWithRetries[difficulty] = 99;
-                        g_GameManager.clrd[characterShotType].difficultyClearedWithoutRetries[difficulty] = 99;
-                    }
-                }
-                resultScreen->cheatCodeStep = 0;
-                g_SoundPlayer.PlaySoundByIdx(SOUND_1UP);
-            }
-        }
-        else
-        {
-            resultScreen->cheatCodeStep = 0;
-        }
-#endif
-    case RESULT_SCREEN_STATE_BEST_SCORES_EASY:
-    case RESULT_SCREEN_STATE_BEST_SCORES_NORMAL:
-    case RESULT_SCREEN_STATE_BEST_SCORES_HARD:
-    case RESULT_SCREEN_STATE_BEST_SCORES_LUNATIC:
-
-        if (resultScreen->charUsed != resultScreen->cursor && resultScreen->frameTimer == 20)
-        {
-            resultScreen->charUsed = resultScreen->cursor;
-            g_AnmManager->DrawStringFormat2(&resultScreen->unk_28a0[0], COLOR_RGB(COLOR_WHITE), COLOR_RGB(COLOR_BLACK),
-                                            g_CharacterList[resultScreen->charUsed * SHOTTYPES_PER_CHARACTER]);
-            g_AnmManager->DrawStringFormat2(&resultScreen->unk_28a0[1], COLOR_RGB(COLOR_WHITE), COLOR_RGB(COLOR_BLACK),
-                                            g_CharacterList[resultScreen->charUsed * SHOTTYPES_PER_CHARACTER + 1]);
-        }
-        if (resultScreen->frameTimer < 30)
-        {
-            break;
-        }
-        if (MoveResultCursorHorizontally(resultScreen, 2))
-        {
-            resultScreen->frameTimer = 0;
-            vm = &resultScreen->unk_40[0];
-            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-            {
-                vm->pendingInterrupt = resultScreen->diffSelected + 3;
-            }
-        }
-        if (WAS_PRESSED(TH_BUTTON_RETURNMENU))
-        {
-            g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
-            resultScreen->resultScreenState = RESULT_SCREEN_STATE_INIT;
-            resultScreen->frameTimer = 1;
-            vm = &resultScreen->unk_40[0];
-            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-            {
-                vm->pendingInterrupt = 1;
-            }
-            resultScreen->lastBestScoresCursor = resultScreen->cursor;
-            resultScreen->cursor = resultScreen->diffSelected;
-        }
-
-        break;
-
-    case RESULT_SCREEN_STATE_SPELLCARDS:
-
-        if (resultScreen->lastSpellcardSelected != resultScreen->cursor && resultScreen->frameTimer == 20)
-        {
-            resultScreen->lastSpellcardSelected = resultScreen->cursor;
-            for (i = resultScreen->lastSpellcardSelected * 10; i < resultScreen->lastSpellcardSelected * 10 + 10; i++)
-            {
-                if (i >= CATK_NUM_CAPTURES)
-                {
-                    break;
-                }
-                if (g_GameManager.catk[i].numAttempts == 0)
-                {
-                    g_AnmManager->DrawVmTextFmt(&resultScreen->unk_28a0[i % 10], COLOR_RGB(COLOR_WHITE),
-                                                COLOR_RGB(COLOR_BLACK), TH_UNKNOWN_SPELLCARD);
-                }
-                else
-                {
-                    g_AnmManager->DrawVmTextFmt(&resultScreen->unk_28a0[i % 10], COLOR_RGB(COLOR_WHITE),
-                                                COLOR_RGB(COLOR_BLACK), g_GameManager.catk[i].name);
-                }
-            }
-        }
-        if (resultScreen->frameTimer < 30)
-        {
-            break;
-        }
-        if (MoveResultCursorHorizontally(resultScreen, 7))
-        {
-            resultScreen->frameTimer = 0;
-            vm = &resultScreen->unk_40[0];
-            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-            {
-                vm->pendingInterrupt = resultScreen->diffSelected + 3;
-            }
-        }
-        if (WAS_PRESSED(TH_BUTTON_RETURNMENU))
-        {
-            g_SoundPlayer.PlaySoundByIdx(SOUND_BACK);
-            resultScreen->resultScreenState = RESULT_SCREEN_STATE_INIT;
-            resultScreen->frameTimer = 1;
-            vm = &resultScreen->unk_40[0];
-            for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-            {
-                vm->pendingInterrupt = 1;
-            }
-            resultScreen->previousCursor = resultScreen->cursor;
-            resultScreen->cursor = resultScreen->diffSelected;
-        }
-        break;
-
-    case RESULT_SCREEN_STATE_WRITING_HIGHSCORE_NAME:
-        resultScreen->HandleResultKeyboard();
-        break;
-
-    case RESULT_SCREEN_STATE_SAVE_REPLAY_QUESTION:
-    case RESULT_SCREEN_STATE_CANT_SAVE_REPLAY:
-    case RESULT_SCREEN_STATE_CHOOSING_REPLAY_FILE:
-    case RESULT_SCREEN_STATE_WRITING_REPLAY_NAME:
-    case RESULT_SCREEN_STATE_OVERWRITE_REPLAY_FILE:
-        resultScreen->HandleReplaySaveKeyboard();
-        break;
-
-    case RESULT_SCREEN_STATE_STATS_SCREEN:
-    case RESULT_SCREEN_STATE_STATS_TO_SAVE_TRANSITION:
-        resultScreen->CheckConfirmButton();
-        break;
-    }
-
-    vm = &resultScreen->unk_40[0];
-    for (i = 0; i < ARRAY_SIZE_SIGNED(resultScreen->unk_40); i++, vm++)
-    {
-        g_AnmManager->ExecuteScript(vm);
-    }
-    resultScreen->frameTimer++;
-    return CHAIN_CALLBACK_RESULT_CONTINUE;
 }
 
 #pragma var_order(strPos, row, name, sprite, ShootScoreListNodeA, column, ShootScoreListNodeB, spritePos)

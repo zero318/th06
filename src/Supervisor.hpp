@@ -5,7 +5,6 @@
 
 #include "Chain.hpp"
 #include "Global.hpp"
-#include "MidiOutput.hpp"
 #include "ZunBool.hpp"
 #include "ZunResult.hpp"
 #include "decomp.hpp"
@@ -13,6 +12,7 @@
 
 namespace th06
 {
+struct MidiOutput;
 #define BUILD_VERSION_008p 0x00081
 #define BUILD_VERSION_013 0x00130
 #define BUILD_VERSION_013a 0x00131
@@ -138,6 +138,11 @@ struct Supervisor
     f32 FramerateMultiplier()
     {
         return this->effectiveFramerateMultiplier;
+    }
+
+    i32 GetMusicMode()
+    {
+        return this->cfg.musicMode;
     }
 
     ZunBool IsHardwareBlendingDisabled()

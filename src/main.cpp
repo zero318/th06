@@ -2,6 +2,7 @@
 #include "AnmManager.hpp"
 #include "GameWindow.hpp"
 #include "Global.hpp"
+#include "MidiOutput.hpp"
 #include "ScreenEffect.hpp"
 #include "SoundPlayer.hpp"
 #include "Stage.hpp"
