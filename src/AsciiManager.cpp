@@ -9,11 +9,14 @@
 #include "ZunTimer.hpp"
 #include <stdio.h>
 
-// The release emits InitializeVms right after AddedCallback, its first user,
-// while the inlines from AnmManager.hpp land at the end of the object. MSVC
-// only does that for an inline it parsed itself rather than took from the
-// precompiled header, so AsciiManager.hpp has to come after the header stop.
-#pragma hdrstop
+namespace th06
+{
+struct AsciiManager;
+} // namespace th06
+
+// Included after the first line of code on purpose: /YX only precompiles headers above it, and the release
+// emits InitializeVms right after AddedCallback, its first user, which MSVC only does for an inline it parsed
+// outside the precompiled header.
 #include "AsciiManager.hpp"
 
 namespace th06
