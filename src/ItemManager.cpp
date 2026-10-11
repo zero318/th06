@@ -12,7 +12,7 @@
 namespace th06
 {
 BSS_SORT(K3) ItemManager g_ItemManager;
-BSS_SORT(K4) ChainElem g_ItemManagerCalcChain;                      // unused
+BSS_SORT(K4) ChainElem g_ItemManagerCalcChain; // unused
 BSS_SORT(K2)
 #if !DISABLE_BSS_HACK
 __declspec(align(8))

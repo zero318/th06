@@ -38,7 +38,6 @@ struct GameWindow
 
 ZUN_ASSERT_TYPE(GameWindow, 0x20, 4);
 
-
 static LRESULT CALLBACK GameWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void GameWindow_InitD3dDevice();
 static i32 GameWindow_InitD3dRendering();

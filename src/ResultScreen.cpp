@@ -331,7 +331,7 @@ ZunResult ParseCatk(ScoreDat *scoreDat, Catk *outCatk)
             outCatk[parsedCatk->idx] = *parsedCatk;
         }
         cursor -= parsedCatk->base.th6kLen;
-        parsedCatk = (Catk *)((u8*)parsedCatk + parsedCatk->base.th6kLen);
+        parsedCatk = (Catk *)((u8 *)parsedCatk + parsedCatk->base.th6kLen);
     }
     return ZUN_SUCCESS;
 }
@@ -380,7 +380,7 @@ ZunResult ParseClrd(ScoreDat *scoreDat, Clrd *outClrd)
             outClrd[parsedClrd->characterShotType] = *parsedClrd;
         }
         cursor -= parsedClrd->base.th6kLen;
-        parsedClrd = (Clrd *)((u8*)parsedClrd + parsedClrd->base.th6kLen);
+        parsedClrd = (Clrd *)((u8 *)parsedClrd + parsedClrd->base.th6kLen);
     }
     return ZUN_SUCCESS;
 }
@@ -840,9 +840,11 @@ static ChainCallbackResult ResultScreen_OnUpdate(ResultScreen *resultScreen)
         if (resultScreen->charUsed != resultScreen->cursor && resultScreen->frameTimer == 20)
         {
             resultScreen->charUsed = resultScreen->cursor;
-            g_AnmManager->DrawStringFormat2(&resultScreen->textLineVms[0], COLOR_RGB(COLOR_WHITE), COLOR_RGB(COLOR_BLACK),
+            g_AnmManager->DrawStringFormat2(&resultScreen->textLineVms[0], COLOR_RGB(COLOR_WHITE),
+                                            COLOR_RGB(COLOR_BLACK),
                                             g_CharacterList[resultScreen->charUsed * SHOTTYPES_PER_CHARACTER]);
-            g_AnmManager->DrawStringFormat2(&resultScreen->textLineVms[1], COLOR_RGB(COLOR_WHITE), COLOR_RGB(COLOR_BLACK),
+            g_AnmManager->DrawStringFormat2(&resultScreen->textLineVms[1], COLOR_RGB(COLOR_WHITE),
+                                            COLOR_RGB(COLOR_BLACK),
                                             g_CharacterList[resultScreen->charUsed * SHOTTYPES_PER_CHARACTER + 1]);
         }
         if (resultScreen->frameTimer < 30)
@@ -2008,10 +2010,9 @@ static ChainCallbackResult ResultScreen_OnDraw(ResultScreen *resultScreen)
             }
             if (resultScreen->resultScreenState == RESULT_SCREEN_STATE_WRITING_REPLAY_NAME)
             {
-                g_AsciiManager.AddFormatText(&pos, "No.%.2d %8s %8s %7s %9d", i + 1, resultScreen->replayName,
-                                             resultScreen->defaultReplay.date,
-                                             g_ShortCharacterList2[GameManager_CharacterShotType()],
-                                             resultScreen->defaultReplay.score);
+                g_AsciiManager.AddFormatText(
+                    &pos, "No.%.2d %8s %8s %7s %9d", i + 1, resultScreen->replayName, resultScreen->defaultReplay.date,
+                    g_ShortCharacterList2[GameManager_CharacterShotType()], resultScreen->defaultReplay.score);
                 g_AsciiManager.SetColor(COLOR_BARELY_BLUE);
 
                 *(u32 *)&name[0] = *(u32 *)"    ";
@@ -2028,8 +2029,8 @@ static ChainCallbackResult ResultScreen_OnDraw(ResultScreen *resultScreen)
             }
             else
             {
-                g_AsciiManager.AddFormatText(&pos, "No.%.2d %8s %8s %7s %9d", i + 1,
-                                             resultScreen->replays[i].name, resultScreen->replays[i].date,
+                g_AsciiManager.AddFormatText(&pos, "No.%.2d %8s %8s %7s %9d", i + 1, resultScreen->replays[i].name,
+                                             resultScreen->replays[i].date,
                                              g_ShortCharacterList2[resultScreen->replays[i].shottypeChara],
                                              resultScreen->replays[i].score);
             }

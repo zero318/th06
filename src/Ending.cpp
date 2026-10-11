@@ -564,7 +564,8 @@ static ZunResult Ending_AddedCallback(Ending *ending)
     ending->hasSeenEnding = false;
     if (g_GameManager.numRetries == 0)
     {
-        if (g_GameManager.clrd[shotTypeAndCharacter].stagesClearedWithoutContinues[g_GameManager.difficulty] == ALL_CLEARED)
+        if (g_GameManager.clrd[shotTypeAndCharacter].stagesClearedWithoutContinues[g_GameManager.difficulty] ==
+            ALL_CLEARED)
         {
             ending->hasSeenEnding = true;
         }
